@@ -8,7 +8,7 @@ import(
 	"io/ioutil"
 )
 
-/*Auxiliary function to parse the rCUDA data received from SSGM */
+/* Parses the rCUDA data received from SSGM */
 func parse_rcuda_data(rcuda_data string) []string {
 	rcuda_data_splits := strings.Split(rcuda_data, ";")
 	for i, e := range rcuda_data_splits {
@@ -17,8 +17,9 @@ func parse_rcuda_data(rcuda_data string) []string {
 	return rcuda_data_splits
 }
 
-/*Auxiliary function to invoke the SCAR function */
-func invoke_scar(rcuda_data_splits []string, sqs_job_id string, script_path string, yaml_path string, ssgm_path string, scheduler_address string, scheduler_port string) {
+/* Invokes the remote SCAR function using a copy of its script with the rCUDA data added to it */
+func invoke_scar(rcuda_data_splits []string, sqs_job_id string, script_path string,
+	yaml_path string, ssgm_path string, scheduler_address string, scheduler_port string) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
 	rcuda_job_id := strings.Split(rcuda_data_splits[1], "=")[1]
 	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
@@ -59,7 +60,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, script_path stri
 		panic("Error copying the content of detect.sh into /tmp/job_id.sh, " + err.Error())
 	}
 
-	//TODO change scar run for scar invoke?
+	//TODO change scar run for scar invoke? Using curl might be another option
 	//Execute the SCAR function using the SCAR CLI
 	fmt.Println("Executing scar run...")
 	err = exec.Command("scar", "run", "-f", yaml_path, "-s", filename).Run()

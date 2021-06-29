@@ -5,7 +5,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
-/* API and functions to pull a message from an SQS queue */
+/* Interface and methods to pull a message from an SQS queue */
 type SQSReceiveMessageAPI interface {
 	GetQueueUrl(ctx context.Context,
 		params *sqs.GetQueueUrlInput,
@@ -24,7 +24,7 @@ func GetMessages(c context.Context, api SQSReceiveMessageAPI, input *sqs.Receive
 	return api.ReceiveMessage(c, input)
 }
 
-/* API and functions to remove a message from an SQS queue */
+/* Interface and methods to remove a message from an SQS queue */
 type SQSDeleteMessageAPI interface {
 	DeleteMessage(ctx context.Context,
 		params *sqs.DeleteMessageInput,

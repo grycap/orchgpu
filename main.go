@@ -83,10 +83,13 @@ func main() {
 
 		//Allocate scheduler resources using SSGM (blocking, waits for the answer until timeout expires)
 		fmt.Println("Executing ssgm...")
-		sched_ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*scheduler_allocation_timeout)*time.Second)
-		cmd := exec.CommandContext(sched_ctx, *ssgm_path, "-S", *scheduler_address, "-P", *scheduler_port, "-alloc", "-g", *gpu_number)
+		sched_ctx, cancel := context.WithTimeout(context.Background(),
+			time.Duration(*scheduler_allocation_timeout)*time.Second)
+		cmd := exec.CommandContext(sched_ctx, *ssgm_path, "-S", *scheduler_address, "-P",
+			*scheduler_port, "-alloc", "-g", *gpu_number)
 		out, err := cmd.Output()
-		//If the ssgm command executes without error and rCUDA data is received before the timeout expires, call the goroutine and delete the message from the SQS queue
+		//If the ssgm command executes without error and rCUDA data is received before the timeout expires,
+		//call the goroutine and delete the message from the SQS queue
 		if sched_ctx.Err() != context.DeadlineExceeded {
 			if err != nil {
 				fmt.Println("The ssgm command has encountered an error: " + err.Error())
@@ -102,7 +105,8 @@ func main() {
 				} else {
 					fmt.Println("SSGM has received rCUDA data containing: " + rcuda_data)
 					//Invoke the SCAR function using the invoke_scar auxiliary function
-					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *yaml_path, *ssgm_path, *scheduler_address, *scheduler_port)
+					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *yaml_path,
+						*ssgm_path, *scheduler_address, *scheduler_port)
 					//Delete the message from the queue
 					fmt.Println("Deleting message from queue...")
 					dMInput := &sqs.DeleteMessageInput{
