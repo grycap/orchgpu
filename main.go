@@ -30,7 +30,7 @@ func main() {
 
 	flag.Parse()
 
-	//TODO maybe check flag values and print help message?
+	//We could check flag values and print a help message here
 
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -79,6 +79,7 @@ func main() {
 		sqs_job := sqs_jobs.Messages[0]
 		sqs_job_id := sqs_job.MessageId
 		sqs_job_receipt_handle := sqs_job.ReceiptHandle
+		sqs_job_body := sqs_job.Body
 		fmt.Println("Message " + *sqs_job_id + " has been pulled from the queue " + *queueURL)
 
 		//Allocate scheduler resources using SSGM (blocking, waits for the answer until timeout expires)
@@ -106,7 +107,7 @@ func main() {
 					fmt.Println("SSGM has received rCUDA data containing: " + rcuda_data)
 					//Invoke the SCAR function using the invoke_scar auxiliary function
 					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *yaml_path,
-						*ssgm_path, *scheduler_address, *scheduler_port)
+						*ssgm_path, *scheduler_address, *scheduler_port, *sqs_job_body, cfg)
 					//Delete the message from the queue
 					fmt.Println("Deleting message from queue...")
 					dMInput := &sqs.DeleteMessageInput{
