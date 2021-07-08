@@ -25,9 +25,8 @@ func parse_rcuda_data(rcuda_data string) []string {
 }
 
 /* Auxiliary function to download an S3 object using a presigned URL  */
-func download_s3_object(client bucket string, object string, cfg aws.Config, s3_object_path string) {
+func download_s3_object(bucket string, object string, client s3.Client, s3_object_path string) {
 	fmt.Println("Generating presigned URL")
-	client := s3.NewFromConfig(cfg)
 	input := &s3.GetObjectInput{
 		Bucket:	bucket,
 		Key:	object,
@@ -56,8 +55,8 @@ func download_s3_object(client bucket string, object string, cfg aws.Config, s3_
 
 /* Auxiliary function to invoke the SCAR function */
 //TODO check parameters with the main.go call
-func invoke_scar(rcuda_data_splits []string, sqs_job_id string, script_path string, yaml_path string,
-	ssgm_path string, scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
+func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, ssgm_path string,
+	scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
 	rcuda_job_id := strings.Split(rcuda_data_splits[1], "=")[1]
 	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
@@ -90,12 +89,20 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, script_path stri
 	object,_,_,_ := string(jsonparser.Get([]byte(*msgResult.Messages[0].Body), "Records", "[0]", "s3", "object", "key"))
 	if bucket == "" || object == "" {
 		panic("Error parsing the SQS notification: bucket name or object key is empty")
-	download_s3_object(bucket, object, cfg, s3_object_path)
+	}
+        client := s3.NewFromConfig(cfg)
+	download_s3_object(bucket, object, client, s3_object_path)
 
-	//Execute the SCAR function using the SCAR CLI
-	//TODO change to scar put
-	fmt.Println("Executing scar run...")
-	err = exec.Command("scar", "run", "-f", yaml_path, "-s", filename).Run()
+	//Make a TAR file with the rcuda script and the s3 object
+	compress_command := exec.Command("tar", "-cvzf", "/tmp/"+sqs_job_id+".tar.gz", "/tmp/"+sqs_job_id+".sh", "/tmp/"+sqs_job_id+".png")
+	err  = compress_command.Run()
+	if err != nil {
+		panic("Error making the TAR file: " + err.Error())
+	}
+
+	//Execute the SCAR function by uploading the tar file to the intermediate S3 bucket
+	fmt.Println("Executing scar put...")
+        err = exec.Command("scar", "put", "-b", intermediate_bucket, "-p", "/tmp/"+sqs_job_id+".tar.gz").Run()
 	if err != nil {
 		panic("Error executing scar run: " + err.Error())
 	}

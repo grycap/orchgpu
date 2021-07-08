@@ -24,9 +24,10 @@ func main() {
 	visibility_timeout := flag.Int("v", 300, "SQS Visibility timeout")
 	wait_time_seconds := flag.Int("w", 20, "SQS Wait time seconds")
 	scheduler_allocation_timeout := flag.Int("s", 30, "Scheduler allocation timeout")
-	script_path := flag.String("p", "", "Script path")
-	yaml_path := flag.String("y", "", "YAML path")
+	//script_path := flag.String("p", "", "Script path")
+	//yaml_path := flag.String("y", "", "YAML path")
 	ssgm_path := flag.String("m", "", "SSGM executable path")
+        intermediate_bucket := flag.String("i", "", "Intermediate S3 bucket")
 
 	flag.Parse()
 
@@ -106,7 +107,7 @@ func main() {
 				} else {
 					fmt.Println("SSGM has received rCUDA data containing: " + rcuda_data)
 					//Invoke the SCAR function using the invoke_scar auxiliary function
-					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *yaml_path,
+					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *intermediate_bucket,
 						*ssgm_path, *scheduler_address, *scheduler_port, *sqs_job_body, cfg)
 					//Delete the message from the queue
 					fmt.Println("Deleting message from queue...")

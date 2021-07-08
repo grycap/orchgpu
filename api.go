@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 /* API and functions to pull a message from an SQS queue */
@@ -36,4 +35,3 @@ func RemoveMessage(c context.Context, api SQSDeleteMessageAPI, input *sqs.Delete
 	return api.DeleteMessage(c, input)
 }
 
-//TODO add S3 send operation
