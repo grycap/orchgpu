@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 )
 
@@ -35,3 +37,13 @@ func RemoveMessage(c context.Context, api SQSDeleteMessageAPI, input *sqs.Delete
 	return api.DeleteMessage(c, input)
 }
 
+/* API and functions to generate a presigned URL for an S3 object */
+type S3PresignGetObjectAPI interface {
+	PresignGetObject(ctx context.Context,
+		params *s3.GetObjectInput,
+		optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+}
+
+func GetPresignedURL(c context.Context, api S3PresignGetObjectAPI, input *s3.GetObjectInput) (*v4.PresignedHTTPRequest, error) {
+	return api.PresignGetObject(c, input)
+}

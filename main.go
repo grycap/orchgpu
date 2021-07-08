@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
-
 func main() {
 	//Define CLI flags
 	queue_name := flag.String("q", "", "Queue name")
@@ -27,7 +26,7 @@ func main() {
 	//script_path := flag.String("p", "", "Script path")
 	//yaml_path := flag.String("y", "", "YAML path")
 	ssgm_path := flag.String("m", "", "SSGM executable path")
-        intermediate_bucket := flag.String("i", "", "Intermediate S3 bucket")
+	intermediate_bucket := flag.String("i", "", "Intermediate S3 bucket")
 
 	flag.Parse()
 
@@ -107,7 +106,7 @@ func main() {
 				} else {
 					fmt.Println("SSGM has received rCUDA data containing: " + rcuda_data)
 					//Invoke the SCAR function using the invoke_scar auxiliary function
-					go invoke_scar(rcuda_data_splits, *sqs_job_id, *script_path, *intermediate_bucket,
+					go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket,
 						*ssgm_path, *scheduler_address, *scheduler_port, *sqs_job_body, cfg)
 					//Delete the message from the queue
 					fmt.Println("Deleting message from queue...")
