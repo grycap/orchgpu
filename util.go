@@ -65,7 +65,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	//Write the rCUDA data in /tmp/job_id.sh
 	rcuda_script_path := "/tmp/" + sqs_job_id + ".sh"
 	rcuda_script, err := os.Create(rcuda_script_path)
-	_, err = rcuda_script.WriteString("#!/bin/sh" + "\n")
+	_, err = rcuda_script.WriteString("#!/bin/bash" + "\n")
 	if err != nil {
 		panic("Error writing file at /tmp/job_id.sh, " + err.Error())
 	}
@@ -104,7 +104,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	download_s3_object(string(bucket), string(object), *client, s3_object_path)
 
 	//Make a TAR file with the rcuda script and the s3 object
-	compress_command := exec.Command("tar", "-cvzf", "/tmp/"+sqs_job_id+".tar.gz", "/tmp/"+sqs_job_id+".sh", "/tmp/"+sqs_job_id+".png")
+	compress_command := exec.Command("tar", "-czf", "/tmp/"+sqs_job_id+".tar.gz", "/tmp/"+sqs_job_id+".sh", "/tmp/"+sqs_job_id+extension)
 	err = compress_command.Run()
 	if err != nil {
 		panic("Error making the TAR file: " + err.Error())
@@ -117,6 +117,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		panic("Error executing scar run: " + err.Error())
 	}
 	fmt.Println("scar run successfully executed")
-	time.Sleep(30) //Might be needed if scar run is non-blocking
+	//scar run is non-blocking, so it must wait for a few seconds before deallocating the scheduler job
+	time.Sleep(30)
 
 }
