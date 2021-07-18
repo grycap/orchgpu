@@ -20,7 +20,7 @@ func main() {
 	scheduler_address := flag.String("S", "", "Scheduler IP address")
 	scheduler_port := flag.String("P", "", "Scheduler port")
 	gpu_number := flag.String("g", "1", "Number of GPUs to allocate")
-	visibility_timeout := flag.Int("v", 300, "SQS Visibility timeout")
+	visibility_timeout := flag.Int("v", 30, "SQS Visibility timeout")
 	wait_time_seconds := flag.Int("w", 20, "SQS Wait time seconds")
 	scheduler_allocation_timeout := flag.Int("s", 30, "Scheduler allocation timeout")
 	//script_path := flag.String("p", "", "Script path")
@@ -53,9 +53,10 @@ func main() {
 	fmt.Println("URL for queue " + *queue_name + " was successfully obtained")
 
 	//In an infinite loop...
-	for {
+	//TODO loop removed for debugging purposes. Remove when finished
+	//for {
 		//Get a message from the queue
-		fmt.Println("Trying to pull a message from the queue")
+		fmt.Println("Pulling a message from the queue...")
 		gMInput := &sqs.ReceiveMessageInput{
 			MessageAttributeNames: []string{
 				string(types.QueueAttributeNameAll),
@@ -65,7 +66,7 @@ func main() {
 			VisibilityTimeout:   int32(*visibility_timeout),
 			WaitTimeSeconds:     int32(*wait_time_seconds),
 		}
-		sqs_jobs, err := GetMessages(context.TODO(), client, gMInput)
+		sqs_jobs, err := GetMessages(context.TODO(), client, gMInput)//Blocking
 		if err != nil {
 			fmt.Println("Error trying to pull messsage from queue:")
 			fmt.Println(err)
@@ -73,14 +74,15 @@ func main() {
 		}
 		if len(sqs_jobs.Messages) == 0 {
 			fmt.Println("The SQS queue is empty. Waiting a few seconds before trying again...")
-			time.Sleep(10)
-			continue
+			time.Sleep(10 * time.Second)
+			//TODO continue commented for debuggin purposes. Remove when finished
+			//continue
 		}
 		sqs_job := sqs_jobs.Messages[0]
 		sqs_job_id := sqs_job.MessageId
-		sqs_job_receipt_handle := sqs_job.ReceiptHandle
+		//sqs_job_receipt_handle := sqs_job.ReceiptHandle
 		sqs_job_body := sqs_job.Body
-		fmt.Println("Message " + *sqs_job_id + " has been pulled from the queue " + *queueURL)
+		fmt.Println("Message " + *sqs_job_id + " has been pulled from the queue " + *queue_name)
 
 		//Allocate scheduler resources using SSGM (blocking, waits for the answer until timeout expires)
 		fmt.Println("Executing ssgm...")
@@ -100,7 +102,12 @@ func main() {
 				rcuda_data_splits := strings.Split(rcuda_data, ";")
 				//Last split is not needed. Operation is safe because len is never 0 in this case
 				rcuda_data_splits = rcuda_data_splits[:len(rcuda_data_splits)-1]
-				ssgm_error_value := strings.Split(rcuda_data_splits[0], "=")[1]
+				//Extract the values of the rCUDA variables
+				for i, e := range rcuda_data_splits{
+					rcuda_data_splits[i] = strings.Split(e, "=")[1]
+				}
+				//Check the SSGM error value
+				ssgm_error_value := rcuda_data_splits[0]
 				if ssgm_error_value == string(1) {
 					fmt.Println("SSGM has return SSGM_ERROR=1")
 				} else {
@@ -108,7 +115,9 @@ func main() {
 					//Invoke the SCAR function using the invoke_scar auxiliary function
 					go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket,
 						*ssgm_path, *scheduler_address, *scheduler_port, *sqs_job_body, cfg)
+					//TODO code below commented for debugging purposes. Remove when finished
 					//Delete the message from the queue
+					/*
 					fmt.Println("Deleting message from queue...")
 					dMInput := &sqs.DeleteMessageInput{
 						QueueUrl:      queueURL,
@@ -120,12 +129,15 @@ func main() {
 						fmt.Println(err)
 						return
 					}
-					fmt.Println("Message " + *sqs_job_id + " was successfully deleted" + *queueURL)
+					*/
+					fmt.Println("Message " + *sqs_job_id + " was successfully deleted from queue " + *queue_name)
 				}
 			}
 		} else {
 			fmt.Println("SSGM timeout expired, assuming the scheduler is busy")
 		}
 		cancel() //Cancel the sched_ctx context
-	}
+		//TODO Sleep added for debugging purposes. Remove when finished
+		time.Sleep(360 * time.Second)
+	//}
 }

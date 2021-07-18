@@ -16,15 +16,6 @@ import (
 	"github.com/buger/jsonparser"
 )
 
-/* Auxiliary function to parse the rCUDA data received from SSGM */
-func parse_rcuda_data(rcuda_data string) []string {
-	rcuda_data_splits := strings.Split(rcuda_data, ";")
-	for i, e := range rcuda_data_splits {
-		rcuda_data_splits[i] = strings.Split(e, "=")[1]
-	}
-	return rcuda_data_splits
-}
-
 /* Auxiliary function to download an S3 object using a presigned URL  */
 func download_s3_object(bucket string, object string, client s3.Client, s3_object_path string) {
 	fmt.Println("Generating presigned URL")
@@ -58,22 +49,20 @@ func download_s3_object(bucket string, object string, client s3.Client, s3_objec
 func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, ssgm_path string,
 	scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
-	rcuda_job_id := strings.Split(rcuda_data_splits[1], "=")[1]
+	rcuda_job_id := rcuda_data_splits[1]
 	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
 	defer dealloc_command.Run()
 
-	//Write the rCUDA data in /tmp/job_id.sh
-	rcuda_script_path := "/tmp/" + sqs_job_id + ".sh"
-	rcuda_script, err := os.Create(rcuda_script_path)
-	_, err = rcuda_script.WriteString("#!/bin/bash" + "\n")
+	//Write the rCUDA data in /tmp/job_id.txt
+	rcuda_txt_path := "/tmp/" + sqs_job_id + ".txt"
+	rcuda_script, err := os.Create(rcuda_txt_path)
+	_, err = rcuda_script.WriteString(rcuda_data_splits[2] + "\n")
 	if err != nil {
-		panic("Error writing file at /tmp/job_id.sh, " + err.Error())
+		panic("Error copying the rCUDA data into /tmp/job_id.txt, " + err.Error())
 	}
-	for _, split := range rcuda_data_splits {
-		_, err := rcuda_script.WriteString(split + "\n")
-		if err != nil {
-			panic("Error copying the rCUDA data into /tmp/job_id.sh, " + err.Error())
-		}
+	_, err = rcuda_script.WriteString(rcuda_data_splits[3] + "\n")
+	if err != nil {
+		panic("Error copying the rCUDA data into /tmp/job_id.txt, " + err.Error())
 	}
 
 	//Parse the S3 SQS notification message to get the bucket name and object key
@@ -93,7 +82,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	object_splits := strings.Split(object, ".")
 	extension := ""
 	if len(object_splits) > 1 {
-		extension = object_splits[1]
+		extension = "."+object_splits[1]
 	} else {
 		panic("Invalid file extension in the S3 object")
 	}
@@ -104,20 +93,22 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	download_s3_object(string(bucket), string(object), *client, s3_object_path)
 
 	//Make a TAR file with the rcuda script and the s3 object
-	compress_command := exec.Command("tar", "-czf", "/tmp/"+sqs_job_id+".tar.gz", "/tmp/"+sqs_job_id+".sh", "/tmp/"+sqs_job_id+extension)
+	compress_command := exec.Command("tar", "-czf", "/tmp/"+sqs_job_id+".tar.gz", "/tmp/"+sqs_job_id+".txt", "/tmp/"+sqs_job_id+extension)
 	err = compress_command.Run()
 	if err != nil {
 		panic("Error making the TAR file: " + err.Error())
 	}
 
 	//Execute the SCAR function by uploading the tar file to the intermediate S3 bucket
-	fmt.Println("Executing scar put...")
+	fmt.Println("Executing scar put" + " -b " + intermediate_bucket + " -p " + "/tmp/" + sqs_job_id + ".tar.gz")
 	err = exec.Command("scar", "put", "-b", intermediate_bucket, "-p", "/tmp/"+sqs_job_id+".tar.gz").Run()
 	if err != nil {
-		panic("Error executing scar run: " + err.Error())
+		panic("Error executing scar put: " + err.Error())
 	}
-	fmt.Println("scar run successfully executed")
-	//scar run is non-blocking, so it must wait for a few seconds before deallocating the scheduler job
-	time.Sleep(30)
+	fmt.Println("scar put successfully executed")
+	//scar put is non-blocking, so the program must wait for a few seconds before deallocating the scheduler job
+	//TODO it is not a very elegant solution. Ideally, it should only wait until scar run finished running
+	time.Sleep(300 * time.Second)
+	fmt.Println("Exiting goroutine")
 
 }
