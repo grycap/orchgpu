@@ -26,7 +26,7 @@ func GetMessages(c context.Context, api SQSReceiveMessageAPI, input *sqs.Receive
 	return api.ReceiveMessage(c, input)
 }
 
-/* API and functions to remove a message from an SQS queue */
+/* API and function to remove a message from an SQS queue */
 type SQSDeleteMessageAPI interface {
 	DeleteMessage(ctx context.Context,
 		params *sqs.DeleteMessageInput,
@@ -37,7 +37,7 @@ func RemoveMessage(c context.Context, api SQSDeleteMessageAPI, input *sqs.Delete
 	return api.DeleteMessage(c, input)
 }
 
-/* API and functions to generate a presigned URL for an S3 object */
+/* API and function to generate a presigned URL for an S3 object */
 type S3PresignGetObjectAPI interface {
 	PresignGetObject(ctx context.Context,
 		params *s3.GetObjectInput,
@@ -46,4 +46,15 @@ type S3PresignGetObjectAPI interface {
 
 func GetPresignedURL(c context.Context, api S3PresignGetObjectAPI, input *s3.GetObjectInput) (*v4.PresignedHTTPRequest, error) {
 	return api.PresignGetObject(c, input)
+}
+
+/* API and function to list the objects of an S3 bucket */
+type S3ListObjectsAPI interface {
+	ListObjectsV2(ctx context.Context,
+		params *s3.ListObjectsV2Input,
+		optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+}
+
+func GetObjects(c context.Context, api S3ListObjectsAPI, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
+	return api.ListObjectsV2(c, input)
 }

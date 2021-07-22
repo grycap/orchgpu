@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
-	"context"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -46,8 +46,8 @@ func download_s3_object(bucket string, object string, client s3.Client, s3_objec
 }
 
 /* Auxiliary function to invoke the SCAR function */
-func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, ssgm_path string,
-	scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
+func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, output_bucket string,
+	ssgm_path string, scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
 	rcuda_job_id := rcuda_data_splits[1]
 	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
@@ -82,7 +82,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	object_splits := strings.Split(object, ".")
 	extension := ""
 	if len(object_splits) > 1 {
-		extension = "."+object_splits[1]
+		extension = "." + object_splits[1]
 	} else {
 		panic("Invalid file extension in the S3 object")
 	}
@@ -106,9 +106,27 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		panic("Error executing scar put: " + err.Error())
 	}
 	fmt.Println("scar put successfully executed")
-	//scar put is non-blocking, so the program must wait for a few seconds before deallocating the scheduler job
-	//TODO it is not a very elegant solution. Ideally, it should only wait until scar run finished running
-	time.Sleep(300 * time.Second)
-	fmt.Println("Exiting goroutine")
-
+	//scar-put is non-blocking, so the program needs to check that the result is in the output bucket before deallocating the job
+	output_bucket_splits := strings.Split(output_bucket, "/")
+	output_bucket_path := output_bucket_splits[0]
+	output_bucket_dir := output_bucket_splits[1]
+	input := &s3.ListObjectsV2Input{
+		Bucket: &output_bucket_path,
+	}
+	for {
+		fmt.Println("Polling the output S3 bucket...")
+		objects, err := GetObjects(context.TODO(), client, input)
+		if err != nil {
+			panic("Error polling the output S3 bucket" + err.Error())
+		}
+		for _, object := range objects.Contents {
+			if strings.Contains(*object.Key, output_bucket_dir+"/"+sqs_job_id+".png") {
+				fmt.Println("Result found in the output S3 bucket. Exiting goroutine")
+				break //After breaking out, the deferred deallocation will happen
+			} else {
+				fmt.Println("Result not found in the output S3 bucket. Trying again in 30 seconds...")
+				time.Sleep(30 * time.Second)
+			}
+		}
+	}
 }
