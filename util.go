@@ -114,7 +114,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		Bucket: &output_bucket_path,
 	}
 	for {
-		fmt.Println("Polling the output S3 bucket...")
+		fmt.Println("Polling the output S3 bucket ("+output_bucket_path+")...")
 		objects, err := GetObjects(context.TODO(), client, input)
 		if err != nil {
 			panic("Error polling the output S3 bucket" + err.Error())
@@ -124,8 +124,8 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 				fmt.Println("Result found in the output S3 bucket. Exiting goroutine")
 				break //After breaking out, the deferred deallocation will happen
 			} else {
-				fmt.Println("Result not found in the output S3 bucket. Trying again in 30 seconds...")
-				time.Sleep(30 * time.Second)
+				fmt.Println("Result not found in the output S3 bucket. Trying again in 60 seconds...")
+				time.Sleep(60 * time.Second)
 			}
 		}
 	}
