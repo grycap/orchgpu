@@ -46,8 +46,8 @@ func download_s3_object(bucket string, object string, client s3.Client, s3_objec
 }
 
 /* Auxiliary function to invoke the SCAR function */
-func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, output_bucket string,
-	ssgm_path string, scheduler_address string, scheduler_port string, sqs_job_body string, cfg aws.Config) {
+func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, output_bucket string, ssgm_path string,
+	scheduler_address string, scheduler_port string, sqs_job_body string, result_bucket_wait *int, cfg aws.Config) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
 	rcuda_job_id := rcuda_data_splits[1]
 	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
@@ -106,6 +106,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		panic("Error executing scar put: " + err.Error())
 	}
 	fmt.Println("scar put successfully executed")
+
 	//scar-put is non-blocking, so the program needs to check that the result is in the output bucket before deallocating the job
 	output_bucket_splits := strings.Split(output_bucket, "/")
 	output_bucket_path := output_bucket_splits[0]
@@ -114,19 +115,24 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		Bucket: &output_bucket_path,
 	}
 	for {
-		fmt.Println("Polling the output S3 bucket ("+output_bucket_path+")...")
+		fmt.Println("Polling the output S3 bucket (" + output_bucket_path + ")...")
 		objects, err := GetObjects(context.TODO(), client, input)
 		if err != nil {
 			panic("Error polling the output S3 bucket" + err.Error())
 		}
+		found_result := false
 		for _, object := range objects.Contents {
 			if strings.Contains(*object.Key, output_bucket_dir+"/"+sqs_job_id+".png") {
-				fmt.Println("Result found in the output S3 bucket. Exiting goroutine")
-				break //After breaking out, the deferred deallocation will happen
-			} else {
-				fmt.Println("Result not found in the output S3 bucket. Trying again in 60 seconds...")
-				time.Sleep(60 * time.Second)
+				found_result = true
+				break
 			}
+		}
+		if found_result {
+			fmt.Println("Result found in the output S3 bucket. Exiting goroutine")
+			break //After breaking out, the deferred deallocation will happen
+		} else {
+			fmt.Println("Result not found in the output S3 bucket. Trying again in a few seconds...")
+			time.Sleep(time.Duration(*result_bucket_wait)*time.Second)
 		}
 	}
 }
