@@ -73,7 +73,7 @@ func main() {
 		}
 		if len(sqs_jobs.Messages) == 0 {
 			fmt.Println("The SQS queue is empty. Waiting a few seconds before trying again...")
-			time.Sleep(time.Duration(*sqs_empty_wait)*time.Second)
+			time.Sleep(time.Duration(*sqs_empty_wait) * time.Second)
 			continue
 		}
 		sqs_job := sqs_jobs.Messages[0]
@@ -82,55 +82,61 @@ func main() {
 		sqs_job_body := sqs_job.Body
 		fmt.Println("Message " + *sqs_job_id + " has been pulled from the queue " + *queue_name)
 
-		//Allocate scheduler resources using SSGM (blocking, waits for the answer until timeout expires)
-		fmt.Println("Executing ssgm...")
-		sched_ctx, cancel := context.WithTimeout(context.Background(),
-			time.Duration(*scheduler_allocation_timeout)*time.Second)
-		cmd := exec.CommandContext(sched_ctx, *ssgm_path, "-S", *scheduler_address, "-P",
-			*scheduler_port, "-alloc", "-g", *gpu_number)
-		out, err := cmd.Output()
-		//If the ssgm command executes without error and rCUDA data is received before the timeout expires,
-		//call the goroutine and delete the message from the SQS queue
-		if sched_ctx.Err() != context.DeadlineExceeded {
+		//Allocate scheduler resources using SSGM
+		//Assumes the scheduler is working in non-blocking mode and returns the following error codes:
+		//SSGM_ERROR=0 --> Resources correctly allocated
+		//SSGM_ERROR=1 --> Request error
+		//SSGM_ERROR=2 --> Resources are busy
+
+		//rcuda_data_splits will be reused later to call the SCAR function
+		rcuda_data_splits := []string{}
+		for {
+			fmt.Println("Executing ssgm...")
+			cmd := exec.Command(*ssgm_path, "-S", *scheduler_address, "-P",
+				*scheduler_port, "-alloc", "-g", *gpu_number)
+			out, err := cmd.Output()
 			if err != nil {
-				fmt.Println("The ssgm command has encountered an error: " + err.Error())
-			} else {
-				//Clean and parse the received data
-				rcuda_data := strings.TrimSpace(string(out))
-				rcuda_data_splits := strings.Split(rcuda_data, ";")
-				//Last split is not needed. Operation is safe because len is never 0 in this case
-				rcuda_data_splits = rcuda_data_splits[:len(rcuda_data_splits)-1]
-				//Extract the values of the rCUDA variables
-				for i, e := range rcuda_data_splits {
-					rcuda_data_splits[i] = strings.Split(e, "=")[1]
-				}
-				//Check the SSGM error value
-				ssgm_error_value := rcuda_data_splits[0]
-				if ssgm_error_value == string(1) {
-					fmt.Println("SSGM has return SSGM_ERROR=1")
-				} else {
-					fmt.Println("SSGM has received rCUDA data containing: " + rcuda_data)
-					//Invoke the SCAR function using the invoke_scar auxiliary function
-					go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket, *output_bucket, *ssgm_path,
-						*scheduler_address, *scheduler_port, *sqs_job_body, result_bucket_wait, cfg)
-					//Delete the message from the queue
-					fmt.Println("Deleting message from queue...")
-					dMInput := &sqs.DeleteMessageInput{
-						QueueUrl:      queueURL,
-						ReceiptHandle: sqs_job_receipt_handle,
-					}
-					_, err := RemoveMessage(context.TODO(), client, dMInput)
-					if err != nil {
-						fmt.Println("An error happened while deleting the message:")
-						fmt.Println(err)
-						return
-					}
-					fmt.Println("Message " + *sqs_job_id + " was successfully deleted from queue " + *queue_name)
-				}
+				fmt.Println("The ssgm command execution has encountered an error: " + err.Error())
 			}
-		} else {
-			fmt.Println("SSGM timeout expired, assuming the scheduler is busy")
+			//Clean and parse the received data
+			rcuda_data := strings.TrimSpace(string(out))
+			rcuda_data_splits = strings.Split(rcuda_data, ";")
+			//Last split is not needed. Operation is safe because len is never 0 in this case
+			rcuda_data_splits = rcuda_data_splits[:len(rcuda_data_splits)-1]
+			//Extract the values of the rCUDA variables
+			for i, e := range rcuda_data_splits {
+				rcuda_data_splits[i] = strings.Split(e, "=")[1]
+			}
+			//Break out of the loop if SSGM_ERROR!=2
+			if rcuda_data_splits[0] != string(2) {
+				break
+			}
+			//If not, wait a few seconds and try again
+			time.Sleep(time.Duration(*scheduler_allocation_timeout) * time.Second)
 		}
-		cancel() //Cancel the sched_ctx context
+		//If the ssgm command executes with no error,
+		//call the goroutine and delete the message from the SQS queue
+		//Check the SSGM error value
+		if rcuda_data_splits[0] == string(1) {
+			fmt.Println("SSGM has return SSGM_ERROR=1")
+		} else {
+			fmt.Println("SSGM has received rCUDA data containing: ", rcuda_data_splits)
+			//Invoke the SCAR function using the invoke_scar auxiliary function
+			go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket, *output_bucket, *ssgm_path,
+				*scheduler_address, *scheduler_port, *sqs_job_body, result_bucket_wait, cfg)
+			//Delete the message from the queue
+			fmt.Println("Deleting message from queue...")
+			dMInput := &sqs.DeleteMessageInput{
+				QueueUrl:      queueURL,
+				ReceiptHandle: sqs_job_receipt_handle,
+			}
+			_, err := RemoveMessage(context.TODO(), client, dMInput)
+			if err != nil {
+				fmt.Println("An error happened while deleting the message:")
+				fmt.Println(err)
+				return
+			}
+			fmt.Println("Message " + *sqs_job_id + " was successfully deleted from queue " + *queue_name)
+		}
 	}
 }

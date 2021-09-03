@@ -115,7 +115,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 		Bucket: &output_bucket_path,
 	}
 	for {
-		fmt.Println("Polling the output S3 bucket (" + output_bucket_path + ")...")
+		fmt.Println("Polling " + output_bucket_path + " for the output file in path: " + output_bucket_dir + "/" + sqs_job_id + ".png")
 		objects, err := GetObjects(context.TODO(), client, input)
 		if err != nil {
 			panic("Error polling the output S3 bucket" + err.Error())
@@ -132,7 +132,7 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 			break //After breaking out, the deferred deallocation will happen
 		} else {
 			fmt.Println("Result not found in the output S3 bucket. Trying again in a few seconds...")
-			time.Sleep(time.Duration(*result_bucket_wait)*time.Second)
+			time.Sleep(time.Duration(*result_bucket_wait) * time.Second)
 		}
 	}
 }
