@@ -100,23 +100,36 @@ func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_buc
 	}
 
 	//Execute the SCAR function by uploading the tar file to the intermediate S3 bucket
-	fmt.Println("Executing scar put" + " -b " + intermediate_bucket + " -p " + "/tmp/" + sqs_job_id + ".tar.gz")
-	err = exec.Command("scar", "put", "-b", intermediate_bucket, "-p", "/tmp/"+sqs_job_id+".tar.gz").Run()
+	compressed_file, err := os.Open("/tmp/" + sqs_job_id + ".tar.gz")
 	if err != nil {
-		panic("Error executing scar put: " + err.Error())
+		panic("Error when trying to open the compressed file")
 	}
-	fmt.Println("scar put successfully executed")
 
-	//scar-put is non-blocking, so the program needs to check that the result is in the output bucket before deallocating the job
+	defer compressed_file.Close()
+
+	intermediate_bucket_splits := strings.Split(intermediate_bucket, "/")
+	intermediate_bucket_name := intermediate_bucket_splits[0]
+	intermediate_bucket_key := intermediate_bucket_splits[1] + "/" + sqs_job_id + ".tar.gz"
+	put_object_input := &s3.PutObjectInput{
+		Bucket: &intermediate_bucket_name,
+		Key:    &intermediate_bucket_key,
+		Body:   compressed_file,
+	}
+	_, err = PutFile(context.TODO(), client, put_object_input)
+	if err != nil {
+		panic("Error uploading the compressed file to the S3 bucket")
+	}
+
+	//The program needs to check that the result is in the output bucket before deallocating the job
 	output_bucket_splits := strings.Split(output_bucket, "/")
 	output_bucket_path := output_bucket_splits[0]
 	output_bucket_dir := output_bucket_splits[1]
-	input := &s3.ListObjectsV2Input{
+	list_objects_input := &s3.ListObjectsV2Input{
 		Bucket: &output_bucket_path,
 	}
 	for {
 		fmt.Println("Polling " + output_bucket_path + " for the output file in path: " + output_bucket_dir + "/" + sqs_job_id + ".png")
-		objects, err := GetObjects(context.TODO(), client, input)
+		objects, err := GetObjects(context.TODO(), client, list_objects_input)
 		if err != nil {
 			panic("Error polling the output S3 bucket" + err.Error())
 		}

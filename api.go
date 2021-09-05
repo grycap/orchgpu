@@ -58,3 +58,14 @@ type S3ListObjectsAPI interface {
 func GetObjects(c context.Context, api S3ListObjectsAPI, input *s3.ListObjectsV2Input) (*s3.ListObjectsV2Output, error) {
 	return api.ListObjectsV2(c, input)
 }
+
+/* API and function to upload an object to an S3 bucket */
+type S3PutObjectAPI interface {
+	PutObject(ctx context.Context,
+		params *s3.PutObjectInput,
+		optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
+func PutFile(c context.Context, api S3PutObjectAPI, input *s3.PutObjectInput) (*s3.PutObjectOutput, error) {
+	return api.PutObject(c, input)
+}
