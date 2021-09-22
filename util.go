@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -45,13 +46,33 @@ func download_s3_object(bucket string, object string, client s3.Client, s3_objec
 	}
 }
 
+func deallocate_rcuda_job(ssgm_path string, scheduler_address string, scheduler_port string, rcuda_job_id string) {
+	fmt.Println("Deallocating rCUDA job with ID " + rcuda_job_id)
+	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
+	err := dealloc_command.Run()
+	if err != nil {
+		panic("Error deallocating the rCUDA job")
+	}
+	fmt.Println("rCUDA job succesfully deallocated")
+}
+
 /* Auxiliary function to invoke the SCAR function */
 func invoke_scar(rcuda_data_splits []string, sqs_job_id string, intermediate_bucket string, output_bucket string, ssgm_path string,
 	scheduler_address string, scheduler_port string, sqs_job_body string, result_bucket_wait *int, cfg aws.Config) {
 	//If there is an error during the execution of this function, the scheduler job must be deallocated
 	rcuda_job_id := rcuda_data_splits[1]
-	dealloc_command := exec.Command(ssgm_path, "-S", scheduler_address, "-P", scheduler_port, "-dealloc", "-j", rcuda_job_id)
-	defer dealloc_command.Run()
+	defer deallocate_rcuda_job(ssgm_path, scheduler_address, scheduler_port, rcuda_job_id)
+
+	//Ctrl-C also deallocates the rCUDA job
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		fmt.Println(" pressed. Exiting...")
+		deallocate_rcuda_job(ssgm_path, scheduler_address, scheduler_port, rcuda_job_id)
+		fmt.Println("Exited.")
+		os.Exit(0)
+	}()
 
 	//Write the rCUDA data in /tmp/job_id.txt
 	rcuda_txt_path := "/tmp/" + sqs_job_id + ".txt"

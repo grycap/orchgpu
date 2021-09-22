@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
+
 func main() {
 	//Define CLI flags
 	queue_name := flag.String("q", "", "Queue name")
@@ -41,6 +42,10 @@ func main() {
 	qUInput := &sqs.GetQueueUrlInput{
 		QueueName: queue_name,
 	}
+
+
+	//Print start time for convenience
+	fmt.Println("Execution start time ", time.Now())
 
 	//Get the SQS queue URL
 	urlResult, err := GetQueueURL(context.TODO(), client, qUInput)
@@ -88,8 +93,11 @@ func main() {
 		//SSGM_ERROR=1 --> Request error
 		//SSGM_ERROR=2 --> Resources are busy
 
-		//rcuda_data_splits will be reused later to call the SCAR function
-		rcuda_data_splits := []string{}
+		//These two variables will be used lated
+		var rcuda_data string
+		var rcuda_data_splits []string
+
+		//Try to allocate a scheduler job
 		for {
 			fmt.Println("Executing ssgm...")
 			cmd := exec.Command(*ssgm_path, "-S", *scheduler_address, "-P",
@@ -99,7 +107,7 @@ func main() {
 				fmt.Println("The ssgm command execution has encountered an error: " + err.Error())
 			}
 			//Clean and parse the received data
-			rcuda_data := strings.TrimSpace(string(out))
+			rcuda_data = strings.TrimSpace(string(out))
 			rcuda_data_splits = strings.Split(rcuda_data, ";")
 			//Last split is not needed. Operation is safe because len is never 0 in this case
 			rcuda_data_splits = rcuda_data_splits[:len(rcuda_data_splits)-1]
@@ -112,6 +120,7 @@ func main() {
 				break
 			}
 			//If not, wait a few seconds and try again
+			fmt.Println("Received SSGM_ERROR=2. Waiting a few seconds before trying again")
 			time.Sleep(time.Duration(*scheduler_allocation_timeout) * time.Second)
 		}
 		//If the ssgm command executes with no error,
@@ -120,7 +129,7 @@ func main() {
 		if rcuda_data_splits[0] == string(1) {
 			fmt.Println("SSGM has return SSGM_ERROR=1")
 		} else {
-			fmt.Println("SSGM has received rCUDA data containing: ", rcuda_data_splits)
+			fmt.Println("SSGM has received rCUDA data containing: ", rcuda_data)
 			//Invoke the SCAR function using the invoke_scar auxiliary function
 			go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket, *output_bucket, *ssgm_path,
 				*scheduler_address, *scheduler_port, *sqs_job_body, result_bucket_wait, cfg)
