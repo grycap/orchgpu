@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -45,22 +46,22 @@ func main() {
 
 
 	//Print start time for convenience
-	fmt.Println("Execution start time ", time.Now())
+	fmt.Println("[main] Execution start time ", time.Now())
 
 	//Get the SQS queue URL
 	urlResult, err := GetQueueURL(context.TODO(), client, qUInput)
 	if err != nil {
-		fmt.Println("Error trying to obtain the URL for queue " + *queue_name + ":")
+		fmt.Println("[main] Error trying to obtain the URL for queue " + *queue_name + ":")
 		fmt.Println(err)
 		return
 	}
 	queueURL := urlResult.QueueUrl
-	fmt.Println("URL for queue " + *queue_name + " was successfully obtained")
+	fmt.Println("[main] URL for queue " + *queue_name + " was successfully obtained")
 
 	//In an infinite loop...
 	for {
 		//Get a message from the queue
-		fmt.Println("Pulling a message from the queue...")
+		fmt.Println("[main] Pulling a message from the queue...")
 		gMInput := &sqs.ReceiveMessageInput{
 			MessageAttributeNames: []string{
 				string(types.QueueAttributeNameAll),
@@ -72,12 +73,12 @@ func main() {
 		}
 		sqs_jobs, err := GetMessages(context.TODO(), client, gMInput) //Blocking
 		if err != nil {
-			fmt.Println("Error trying to pull messsage from queue:")
+			fmt.Println("[main] Error trying to pull messsage from queue:")
 			fmt.Println(err)
 			return
 		}
 		if len(sqs_jobs.Messages) == 0 {
-			fmt.Println("The SQS queue is empty. Waiting a few seconds before trying again...")
+			fmt.Println("[main] The SQS queue is empty. Waiting a few seconds before trying again...")
 			time.Sleep(time.Duration(*sqs_empty_wait) * time.Second)
 			continue
 		}
@@ -85,7 +86,7 @@ func main() {
 		sqs_job_id := sqs_job.MessageId
 		sqs_job_receipt_handle := sqs_job.ReceiptHandle
 		sqs_job_body := sqs_job.Body
-		fmt.Println("Message " + *sqs_job_id + " has been pulled from the queue " + *queue_name)
+		fmt.Println("[main] Message " + *sqs_job_id + " has been pulled from the queue " + *queue_name)
 
 		//Allocate scheduler resources using SSGM
 		//Assumes the scheduler is working in non-blocking mode and returns the following error codes:
@@ -99,12 +100,12 @@ func main() {
 
 		//Try to allocate a scheduler job
 		for {
-			fmt.Println("Executing ssgm...")
+			fmt.Println("[main] Executing ssgm...")
 			cmd := exec.Command(*ssgm_path, "-S", *scheduler_address, "-P",
 				*scheduler_port, "-alloc", "-g", *gpu_number)
 			out, err := cmd.Output()
 			if err != nil {
-				fmt.Println("The ssgm command execution has encountered an error: " + err.Error())
+				fmt.Println("[main] The ssgm command execution has encountered an error: " + err.Error())
 			}
 			//Clean and parse the received data
 			rcuda_data = strings.TrimSpace(string(out))
@@ -116,36 +117,36 @@ func main() {
 				rcuda_data_splits[i] = strings.Split(e, "=")[1]
 			}
 			//Break out of the loop if SSGM_ERROR!=2
-			if rcuda_data_splits[0] != string(2) {
+			if rcuda_data_splits[0] != strconv.Itoa(2) {
 				break
 			}
 			//If not, wait a few seconds and try again
-			fmt.Println("Received SSGM_ERROR=2. Waiting a few seconds before trying again")
+			fmt.Println("[main] Received SSGM_ERROR=2. Waiting a few seconds before trying again")
 			time.Sleep(time.Duration(*scheduler_allocation_timeout) * time.Second)
 		}
 		//If the ssgm command executes with no error,
 		//call the goroutine and delete the message from the SQS queue
 		//Check the SSGM error value
 		if rcuda_data_splits[0] == string(1) {
-			fmt.Println("SSGM has return SSGM_ERROR=1")
+			fmt.Println("[main] SSGM has return SSGM_ERROR=1")
 		} else {
-			fmt.Println("SSGM has received rCUDA data containing: ", rcuda_data)
+			fmt.Println("[main] SSGM has received rCUDA data containing: ", rcuda_data)
 			//Invoke the SCAR function using the invoke_scar auxiliary function
 			go invoke_scar(rcuda_data_splits, *sqs_job_id, *intermediate_bucket, *output_bucket, *ssgm_path,
 				*scheduler_address, *scheduler_port, *sqs_job_body, result_bucket_wait, cfg)
 			//Delete the message from the queue
-			fmt.Println("Deleting message from queue...")
+			fmt.Println("[main] Deleting message from queue...")
 			dMInput := &sqs.DeleteMessageInput{
 				QueueUrl:      queueURL,
 				ReceiptHandle: sqs_job_receipt_handle,
 			}
 			_, err := RemoveMessage(context.TODO(), client, dMInput)
 			if err != nil {
-				fmt.Println("An error happened while deleting the message:")
+				fmt.Println("[main] An error happened while deleting the message:")
 				fmt.Println(err)
 				return
 			}
-			fmt.Println("Message " + *sqs_job_id + " was successfully deleted from queue " + *queue_name)
+			fmt.Println("[main] Message " + *sqs_job_id + " was successfully deleted from queue " + *queue_name)
 		}
 	}
 }
